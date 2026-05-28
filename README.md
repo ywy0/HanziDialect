@@ -38,6 +38,9 @@ worksking 仓库: <https://github.com/worksking/Chinese_dialect_Rime_dict>
 - 纯前端静态页面，零后端依赖
 - 所有数据在构建时生成，运行时无网络请求
 - GitHub Pages 友好：`readings.js` 通过 `<script>` 标签加载
+- 繁简字形适配：输入简体自动显示繁体读音（带 * 标记），反之亦然
+
+
 
 ## 本地构建
 
@@ -47,3 +50,11 @@ python build.py
 ```
 
 需要网络连接（下载 Unihan 数据库和 RIME 词典）。
+
+### 额外生成的数据文件
+
+| 文件 | 说明 |
+|------|------|
+| `hakka_tones.json` | 梅县客家话声调数据（从广韵推导，16,485 字） |
+| `st_mapping.json` | 繁简字形映射（Unihan Variants，12,972 对） |
+| `yue_ltc_supplement.json` | 粤语缺调字 LTC 补全 |

@@ -59,6 +59,9 @@
 
   .no-result { color: #999; text-align: center; padding: 40px; }
 
+  /* Variant star mark */
+  .pron .variant { color: #c0c; font-weight: bold; font-size: 11px; }
+
   /* ── Sidebar ── */
   .sidebar {
     width: 180px; background: #fff; border-left: 1px solid #eee;
@@ -104,11 +107,13 @@
   }
 </style>
 <script src="data/readings.js" defer></script>
+<script src="data/st_mapping.js" defer></script>
 </head>
 <body>
 
 <div class="header">
   <h1>汉字方言读音对照</h1>
+  <div style="font-size:12px;color:#aaa;margin-top:4px;">带 * 标注的读音来自对应的繁/简字形</div>
   <div class="search-box">
     <input type="text" id="input" value="" placeholder="请输入汉字，如“你好”">
   </div>
@@ -160,6 +165,17 @@ function getPron(data, langId) {
   return raw.split(",")[0].trim();
 }
 
+function mergePron(data, ch, langId) {
+  let pron = getPron(data[ch], langId);
+  if (pron) return pron;
+  let varCh = ST && ST[ch];
+  if (varCh && data[varCh]) {
+    let vpron = getPron(data[varCh], langId);
+    if (vpron) return vpron + "*";
+  }
+  return "";
+}
+
 // ── Render ──
 function render() {
   const text = document.getElementById("input").value;
@@ -182,7 +198,7 @@ function render() {
     html += '<div class="char-grid">';
     for (const ch of chars) {
       const isPunct = /[，。、！？；：""''（）\-\—\s]/.test(ch);
-      const pron = getPron(DB[ch], langId);
+      const pron = mergePron(DB, ch, langId);
       html += `<div class="char-cell${isPunct?" punct":""}" data-char="${escAttr(ch)}" data-pron="${escAttr(pron)}">`;
       html += `<span class="hanzi">${escHtml(ch)}</span>`;
       html += pron ? `<span class="pron">${escHtml(pron)}</span>` : "";
