@@ -151,8 +151,7 @@ const LANGS = [
 ];
 const LANG_MAP = Object.fromEntries(LANGS.map(l => [l.id, l]));
 
-let srcId = "cmn";
-let tgtIds = new Set(["yue"]);
+let langStack = ["cmn", "yue"]; // [源语言, ...对应语言]，按显示顺序排列
 
 function getPron(data, langId) {
   if (!data) return "";
@@ -176,28 +175,14 @@ function render() {
     return;
   }
 
-  // Source row
-  let html = '<div class="lang-row">';
-  html += `<div class="label">${LANG_MAP[srcId]?.label || srcId}</div>`;
-  html += '<div class="char-grid" data-row="src">';
-  for (const ch of chars) {
-    const isPunct = /[，。、！？；：""''（）\-\—\s]/.test(ch);
-    const pron = getPron(DB[ch], srcId);
-    html += `<div class="char-cell${isPunct?" punct":""}" data-char="${escAttr(ch)}" data-pron="${escAttr(pron)}">`;
-    html += `<span class="hanzi">${escHtml(ch)}</span>`;
-    html += pron ? `<span class="pron">${escHtml(pron)}</span>` : "";
-    html += '</div>';
-  }
-  html += '</div></div>';
-
-  // Target rows (one per checked language)
-  for (const tid of tgtIds) {
+  let html = "";
+  for (const langId of langStack) {
     html += '<div class="lang-row">';
-    html += `<div class="label">${LANG_MAP[tid]?.label || tid}</div>`;
-    html += '<div class="char-grid" data-row="tgt">';
+    html += `<div class="label">${LANG_MAP[langId]?.label || langId}</div>`;
+    html += '<div class="char-grid">';
     for (const ch of chars) {
       const isPunct = /[，。、！？；：""''（）\-\—\s]/.test(ch);
-      const pron = getPron(DB[ch], tid);
+      const pron = getPron(DB[ch], langId);
       html += `<div class="char-cell${isPunct?" punct":""}" data-char="${escAttr(ch)}" data-pron="${escAttr(pron)}">`;
       html += `<span class="hanzi">${escHtml(ch)}</span>`;
       html += pron ? `<span class="pron">${escHtml(pron)}</span>` : "";
@@ -230,41 +215,54 @@ function initSidebar() {
   // Source language dropdown
   const srcSel = document.getElementById("srcLang");
   srcSel.innerHTML = LANGS.map(l => `<option value="${l.id}">${l.label}</option>`).join("");
-  srcSel.value = srcId;
+  srcSel.value = langStack[0];
   srcSel.addEventListener("change", () => {
     const newSrc = srcSel.value;
-    const prevSrc = srcId;
-    if (newSrc !== prevSrc) {
-      srcId = newSrc;
-      tgtIds.delete(newSrc); // 新源语言从对应语言中移除
-      tgtIds.add(prevSrc);   // 原原始语言自动加入对应语言
-      rebuildLangList();
-      render();
+    if (newSrc !== langStack[0]) {
+      setSource(newSrc);
     }
   });
 
   rebuildLangList();
 }
 
+function setSource(newSrc) {
+  // 从栈中移除新源语言（如果已在对应语言中）
+  const idx = langStack.indexOf(newSrc);
+  if (idx > 0) langStack.splice(idx, 1);
+  // 插入到栈顶作为新源语言，旧源语言自动变成对应语言
+  langStack.unshift(newSrc);
+  document.getElementById("srcLang").value = newSrc;
+  rebuildLangList();
+  render();
+}
+
 function rebuildLangList() {
   const list = document.getElementById("langList");
   list.innerHTML = "";
 
+  const srcId = langStack[0];
   const available = LANGS.filter(l => l.id !== srcId);
 
   for (const lang of available) {
     const div = document.createElement("div");
-    const isOn = tgtIds.has(lang.id);
+    const isOn = langStack.indexOf(lang.id) > 0;
     div.className = "lang-item" + (isOn ? " on" : "");
     div.innerHTML = `<span class="box">✓</span><span>${lang.label}</span>`;
-    div.addEventListener("click", () => {
-      if (tgtIds.has(lang.id)) tgtIds.delete(lang.id);
-      else tgtIds.add(lang.id);
-      rebuildLangList();
-      render();
-    });
+    div.addEventListener("click", () => toggleLang(lang.id));
     list.appendChild(div);
   }
+}
+
+function toggleLang(langId) {
+  const idx = langStack.indexOf(langId);
+  if (idx > 0) {
+    langStack.splice(idx, 1); // 已在对应语言中，移除
+  } else {
+    langStack.push(langId);   // 不在栈中，追加到末尾
+  }
+  rebuildLangList();
+  render();
 }
 
 // ── Boot ──
