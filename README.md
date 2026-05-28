@@ -1,23 +1,45 @@
 # 汉字多方言读音查询
 
-输入汉字，查看在普通话、粤语、客家话、日语（音读/训读）、韩语、越南语中的读音。
+输入汉字，查看在普通话、粤语、客家话、吴语（上海话/苏州话）、闽南语（泉漳）、闽东语（福州话）、潮州话、中古汉语（广韵）、上古汉语、日语（音读/训读）、韩语、越南语中的读音。
 
-## 在线使用
+在线使用：<https://ywy0.github.io/HanziDialect/>
 
-直接打开 `index.html`（需要通过 HTTP 服务访问，因为需要 fetch JSON 数据库）。
+## 数据来源
 
-## 数据说明
+### Unicode Unihan 数据库
+- **普通话 (cmn)**: `kMandarin` — 44,348 字
+- **粤语 (yue)**: `kCantonese` — 29,936 字
+- **日语音读 (jpn_on)**: `kJapaneseOn` — 13,177 字
+- **日语训读 (jpn_kun)**: `kJapaneseKun`
+- **韩语 (kor)**: `kKorean` — 9,050 字
+- **越南语 (vie)**: `kVietnamese` — 8,306 字
 
-- **普通话/粤语/日语/韩语/越南语**: 来自 Unicode Unihan 数据库
-- **客家话**: 来自 syndict/hakka RIME 词典（梅县腔）
+来源: <https://www.unicode.org/Public/UCD/latest/ucd/Unihan.zip>
 
-## 部署到 GitHub Pages
+### RIME 词典
 
-1. 把这个仓库 push 到 GitHub
-2. 在仓库 Settings → Pages 里启用 GitHub Pages（选择 main 分支）
-3. 等几分钟就可以访问了
+| 语言 | 子类 | 来源 | 字数 |
+|------|------|------|------|
+| **客家话 (hak)** | 梅县腔 | [syndict/hakka](https://github.com/syndict/hakka) | 16,570 |
+| | 客拼 | [worksking/Chinese_dialect_Rime_dict](https://github.com/worksking/Chinese_dialect_Rime_dict) | 17,129 |
+| **粤语 (yue)** | 粤拼 | worksking | 20,087 |
+| **上海话 (wuu_sh)** | 上海中派 | worksking | 7,610 |
+| **苏州话 (wuu_sz)** | 苏州 | worksking | 6,074 |
+| **闽南语泉漳 (nan)** | 泉漳 | worksking | 4,909 |
+| **福州话 (cdo)** | 福州 | worksking | 9,821 |
+| **潮州话 (teo)** | 揭阳/汕头/潮州/潮阳/澄海/饶平 | worksking | 7,485 |
+| **中古汉语 (ltc)** | 广韵罗马字/中古全拼/尔切 | worksking | 21,550 |
+| **上古汉语 (och)** | 上古全拼 | worksking | 13,134 |
 
-## 本地构建数据库
+worksking 仓库: <https://github.com/worksking/Chinese_dialect_Rime_dict>
+
+## 技术说明
+
+- 纯前端静态页面，零后端依赖
+- 所有数据在构建时生成，运行时无网络请求
+- GitHub Pages 友好：`readings.js` 通过 `<script>` 标签加载
+
+## 本地构建
 
 ```bash
 cd data
