@@ -236,7 +236,8 @@ function initSidebar() {
     const prevSrc = srcId;
     if (newSrc !== prevSrc) {
       srcId = newSrc;
-      tgtIds.add(prevSrc); // 原原始语言自动加入对应语言
+      tgtIds.delete(newSrc); // 新源语言从对应语言中移除
+      tgtIds.add(prevSrc);   // 原原始语言自动加入对应语言
       rebuildLangList();
       render();
     }
