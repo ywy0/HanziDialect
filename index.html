@@ -21,16 +21,15 @@
     border: none; border-radius: 8px; outline: none;
     font-family: inherit;
   }
-  .search-box .speak-btn {
+  .spk {
     display: inline-flex; align-items: center; justify-content: center;
-    width: 38px; height: 38px; border: none; border-radius: 8px;
-    background: rgba(255,255,255,.15); color: #fff; font-size: 18px;
-    cursor: pointer; margin-left: 6px; vertical-align: middle;
-    transition: background .15s;
+    width: 24px; height: 24px; border: none; border-radius: 4px;
+    background: rgba(0,0,0,.06); color: #666; font-size: 12px;
+    cursor: pointer; vertical-align: middle; margin-left: 6px;
+    transition: all .15s;
   }
-  .search-box .speak-btn:hover { background: rgba(255,255,255,.3); }
-  .search-box .speak-btn:active { background: rgba(255,255,255,.1); }
-  .search-box .speak-btn.speaking { background: #e03131; }
+  .spk:hover { background: rgba(0,0,0,.12); color: #333; }
+  .spk.playing { background: #e03131; color: #fff; }
 
   .container { display: flex; min-height: calc(100vh - 100px); }
 
@@ -126,7 +125,6 @@
   <div style="font-size:12px;color:#aaa;margin-top:4px;">带 * 标注的读音来自对应的繁/简字形</div>
   <div class="search-box">
     <input type="text" id="input" value="" placeholder="请输入汉字，如“你好”">
-    <button class="speak-btn" id="speakBtn" title="朗读">&#9654;</button>
   </div>
 </div>
 
@@ -205,7 +203,7 @@ function render() {
   let html = "";
   for (const langId of langStack) {
     html += '<div class="lang-row">';
-    html += `<div class="label">${LANG_MAP[langId]?.label || langId}</div>`;
+    html += `<div class="label">${LANG_MAP[langId]?.label || langId} <span class="spk" data-lang="${langId}">&#9654;</span></div>`;
     html += '<div class="char-grid">';
     for (const ch of chars) {
       const isPunct = /[，。、！？；：""''（）\-\—\s]/.test(ch);
@@ -293,25 +291,82 @@ function toggleLang(langId) {
 }
 
 // ── Speak ──
-const LANG_VOICE = { cmn:"zh-CN", yue:"zh-HK", hak:"zh-CN", wuu_sh:"zh-CN", wuu_sz:"zh-CN", nan:"zh-CN", cdo:"zh-CN", teo:"zh-CN", ltc:"zh-CN", och:"zh-CN", jpn_on:"ja-JP", jpn_kun:"ja-JP", kor:"ko-KR", vie:"vi-VN" };
-let speaking = false;
-document.getElementById("speakBtn").addEventListener("click", () => {
-  const text = document.getElementById("input").value.trim();
-  if (!text) return;
-  if (speaking) { window.speechSynthesis.cancel(); speaking = false; document.getElementById("speakBtn").classList.remove("speaking"); return; }
-  const u = new SpeechSynthesisUtterance(text);
-  u.lang = LANG_VOICE[langStack[0]] || "zh-CN";
-  u.rate = 0.9;
-  u.onend = u.onerror = () => { speaking = false; document.getElementById("speakBtn").classList.remove("speaking"); };
-  speaking = true; document.getElementById("speakBtn").classList.add("speaking");
-  window.speechSynthesis.speak(u);
-});
+const LANG_VOICE = { cmn:"zh-CN", yue:"zh-CN", hak:"zh-CN", wuu_sh:"zh-CN", wuu_sz:"zh-CN", nan:"zh-CN", cdo:"zh-CN", teo:"zh-CN", ltc:"zh-CN", och:"zh-CN", jpn_on:"ja-JP", jpn_kun:"ja-JP", kor:"ko-KR", vie:"vi-VN" };
+
+// pinyin→汉字索引，用于拼读
+let PINYIN_CHAR = null;
+function buildPinyinIndex() {
+  PINYIN_CHAR = {};
+  for (const ch of Object.keys(DB)) {
+    const p = DB[ch].cmn;
+    if (p) {
+      const base = p.replace(/[0-9]/g, "");
+      if (!PINYIN_CHAR[base]) PINYIN_CHAR[base] = ch;
+    }
+  }
+}
 
 // ── Boot ──
 document.getElementById("input").addEventListener("input", render);
+document.getElementById("main").addEventListener("click", e => {
+  const spk = e.target.closest(".spk");
+  if (!spk) return;
+  const row = spk.closest(".lang-row");
+  if (!row) return;
+  const langId = spk.dataset.lang;
+
+  // 日韩越：用原生 TTS 读汉字
+  const nativeTts = ["jpn_on","jpn_kun","kor","vie"].includes(langId);
+  if (nativeTts) {
+    const text = document.getElementById("input").value.trim();
+    if (!text) return;
+    if (spk.classList.contains("playing")) {
+      window.speechSynthesis.cancel();
+      document.querySelectorAll(".spk.playing").forEach(el => el.classList.remove("playing"));
+      return;
+    }
+    window.speechSynthesis.cancel();
+    document.querySelectorAll(".spk.playing").forEach(el => el.classList.remove("playing"));
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = LANG_VOICE[langId];
+    u.rate = 0.9;
+    u.onend = u.onerror = () => spk.classList.remove("playing");
+    spk.classList.add("playing");
+    window.speechSynthesis.speak(u);
+    return;
+  }
+
+  // 拼读：将注音映射为普通话能读的汉字
+  const tokens = [];
+  for (const cell of row.querySelectorAll(".char-cell:not(.punct)")) {
+    const pron = cell.dataset.pron;
+    if (!pron) { tokens.push(cell.dataset.char); continue; }
+    const base = pron.replace(/[0-9]/g, "").toLowerCase().trim();
+    const mapped = PINYIN_CHAR && PINYIN_CHAR[base];
+    tokens.push(mapped || cell.dataset.char);
+  }
+  if (!tokens.length) return;
+  if (spk.classList.contains("playing")) {
+    window.speechSynthesis.cancel();
+    document.querySelectorAll(".spk.playing").forEach(el => el.classList.remove("playing"));
+    return;
+  }
+  window.speechSynthesis.cancel();
+  document.querySelectorAll(".spk.playing").forEach(el => el.classList.remove("playing"));
+  const u = new SpeechSynthesisUtterance(tokens.join(" "));
+  u.lang = "zh-CN";
+  u.rate = 0.9;
+  u.onend = u.onerror = () => spk.classList.remove("playing");
+  spk.classList.add("playing");
+  window.speechSynthesis.speak(u);
+});
 initSidebar();
 (function wait() {
-  if (typeof DB !== "undefined") { render(); return; }
+  if (typeof DB !== "undefined") {
+    buildPinyinIndex();
+    render();
+    return;
+  }
   setTimeout(wait, 50);
 })();
 </script>
