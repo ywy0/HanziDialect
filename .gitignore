@@ -1,0 +1,4 @@
+# Python build
+__pycache__/
+*.pyc
+data/build.py
