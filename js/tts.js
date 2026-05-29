@@ -32,8 +32,14 @@ var TTS = (function() {
 
   function getCtx() {
     if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
-    if (ctx.state === "suspended") ctx.resume();
     return ctx;
+  }
+
+  // Resume AudioContext — returns Promise, must be called while user gesture is active
+  function resumeCtx() {
+    var c = getCtx();
+    if (c.state === "suspended") return c.resume().then(function() { return c; });
+    return Promise.resolve(c);
   }
 
   function decodeOpus(b64) {
@@ -71,31 +77,33 @@ var TTS = (function() {
     currentSpk = spkEl;
     spkEl.classList.add("playing");
 
+    var acReady = resumeCtx();
     var prons = collectProns(row);
 
     Promise.all(prons.map(function(p) { return p ? getBuf(langId, p) : null; }))
       .then(function(bufs) {
         if (currentSpk !== spkEl) return;
-        var ac = getCtx();
-        var t = ac.currentTime + 0.05;
-        for (var i = 0; i < bufs.length; i++) {
-          if (!bufs[i]) continue;
-          var src = ac.createBufferSource();
-          src.buffer = bufs[i];
-          src.connect(ac.destination);
-          src.start(t);
-          t += bufs[i].duration + 0.04;
-        }
-        var endTime = t;
-        var check = setInterval(function() {
-          if (ac.currentTime >= endTime || currentSpk !== spkEl) {
-            clearInterval(check);
-            if (currentSpk === spkEl) {
-              spkEl.classList.remove("playing");
-              currentSpk = null;
-            }
+        return acReady.then(function(ac) {
+          var t = ac.currentTime + 0.05;
+          for (var i = 0; i < bufs.length; i++) {
+            if (!bufs[i]) continue;
+            var src = ac.createBufferSource();
+            src.buffer = bufs[i];
+            src.connect(ac.destination);
+            src.start(t);
+            t += bufs[i].duration + 0.04;
           }
-        }, 100);
+          var endTime = t;
+          var check = setInterval(function() {
+            if (ac.currentTime >= endTime || currentSpk !== spkEl) {
+              clearInterval(check);
+              if (currentSpk === spkEl) {
+                spkEl.classList.remove("playing");
+                currentSpk = null;
+              }
+            }
+          }, 100);
+        });
       })
       .catch(function() {
         spkEl.classList.remove("playing");
@@ -109,6 +117,9 @@ var TTS = (function() {
     currentSpk = spkEl;
     spkEl.classList.add("playing");
 
+    // Eagerly resume AudioContext while user gesture is still active (Chrome policy)
+    var acReady = resumeCtx();
+
     var prons = collectProns(row);
     var syllables = prons.filter(function(p) { return p; }).map(toHkilang).join(" ");
     if (!syllables) { spkEl.classList.remove("playing"); currentSpk = null; return; }
@@ -120,7 +131,7 @@ var TTS = (function() {
         if (!resp.ok) throw new Error("API error " + resp.status);
         return resp.arrayBuffer();
       })
-      .then(function(buf) { return getCtx().decodeAudioData(buf); })
+      .then(function(buf) { return acReady.then(function(ac) { return ac.decodeAudioData(buf); }); })
       .then(function(audioBuf) {
         if (currentSpk !== spkEl) return;
         var ac = getCtx();
