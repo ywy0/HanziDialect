@@ -1,15 +1,34 @@
-// TTS engine — browser SpeechSynthesis for cmn/jpn/kor/vie,
-// espeak-ng Opus sprite for yue/hak via Web Audio API.
+// TTS engine
+//   cmn/yue     → browser SpeechSynthesis (zh-CN / zh-HK)
+//   jpn/kor/vie → browser SpeechSynthesis with readings from grid
+//   hak         → hkilang VITS2 API, espeak sprite as offline fallback
+//   wuu/nan/etc → browser SpeechSynthesis zh-CN (best-effort)
 var TTS = (function() {
   var ctx = null;
-  var cache = {};       // "lang/pron" -> AudioBuffer
+  var cache = {};       // "lang/pron" → AudioBuffer
   var currentSpk = null;
-  var BARES = ["yue", "hak"];  // languages with espeak audio sprites
+
+  // Languages with pre-generated espeak sprites (now only used as hak fallback)
+  var BARES = ["hak"];
+
+  // Languages that speak grid readings instead of raw Chinese text
   var NATIVE = ["jpn_on", "jpn_kun", "kor", "vie"];
-  var VOICE = { cmn:"zh-CN", yue:"zh-CN", hak:"zh-CN",
+
+  // Browser SpeechSynthesis language mapping
+  var VOICE = { cmn:"zh-CN", yue:"zh-HK", hak:"zh-CN",
     wuu_sh:"zh-CN", wuu_sz:"zh-CN", nan:"zh-CN", cdo:"zh-CN",
     teo:"zh-CN", ltc:"zh-CN", och:"zh-CN",
     jpn_on:"ja-JP", jpn_kun:"ja-JP", kor:"ko-KR", vie:"vi-VN" };
+
+  // hkilang VITS2 TTS API (Hakka)
+  var HAK_API = "https://Chaak2.pythonanywhere.com/TTS/hakka/{syllables}?voice=male&speed=1";
+
+  // Convert GD/Hagfa Pinyim 入声 finals to hkilang format (-b/-d/-g → -p/-t/-k)
+  function toHkilang(syl) {
+    return syl.replace(/([^n])([bgd])(\d)$/g, function(_, prev, coda, tone) {
+      return prev + {b:"p", d:"t", g:"k"}[coda] + tone;
+    });
+  }
 
   function getCtx() {
     if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -35,22 +54,28 @@ var TTS = (function() {
     });
   }
 
-  // ── espeak sprite playback ──
-  function speakSprites(langId, row, spkEl) {
-    stop();
-    currentSpk = spkEl;
-    spkEl.classList.add("playing");
-
+  // ── Collect pronunciations from grid row ──
+  function collectProns(row) {
     var cells = row.querySelectorAll(".char-cell:not(.punct)");
     var prons = [];
     for (var i = 0; i < cells.length; i++) {
       var p = (cells[i].dataset.pron || "").replace(/\*$/, "").trim();
       prons.push(p || null);
     }
+    return prons;
+  }
+
+  // ── Pre-generated espeak sprite playback (hak fallback) ──
+  function speakSprites(langId, row, spkEl) {
+    stop();
+    currentSpk = spkEl;
+    spkEl.classList.add("playing");
+
+    var prons = collectProns(row);
 
     Promise.all(prons.map(function(p) { return p ? getBuf(langId, p) : null; }))
       .then(function(bufs) {
-        if (currentSpk !== spkEl) return; // cancelled mid-decode
+        if (currentSpk !== spkEl) return;
         var ac = getCtx();
         var t = ac.currentTime + 0.05;
         for (var i = 0; i < bufs.length; i++) {
@@ -61,7 +86,6 @@ var TTS = (function() {
           src.start(t);
           t += bufs[i].duration + 0.04;
         }
-        // Track when all playback ends
         var endTime = t;
         var check = setInterval(function() {
           if (ac.currentTime >= endTime || currentSpk !== spkEl) {
@@ -76,6 +100,47 @@ var TTS = (function() {
       .catch(function() {
         spkEl.classList.remove("playing");
         currentSpk = null;
+      });
+  }
+
+  // ── hkilang VITS2 API playback (Hakka primary) ──
+  function speakHakkaAPI(row, spkEl) {
+    stop();
+    currentSpk = spkEl;
+    spkEl.classList.add("playing");
+
+    var prons = collectProns(row);
+    var syllables = prons.filter(function(p) { return p; }).map(toHkilang).join(" ");
+    if (!syllables) { spkEl.classList.remove("playing"); currentSpk = null; return; }
+
+    var url = HAK_API.replace("{syllables}", encodeURIComponent(syllables));
+
+    fetch(url)
+      .then(function(resp) {
+        if (!resp.ok) throw new Error("API error " + resp.status);
+        return resp.arrayBuffer();
+      })
+      .then(function(buf) { return getCtx().decodeAudioData(buf); })
+      .then(function(audioBuf) {
+        if (currentSpk !== spkEl) return;
+        var ac = getCtx();
+        var src = ac.createBufferSource();
+        src.buffer = audioBuf;
+        src.connect(ac.destination);
+        src.start();
+        src.onended = function() {
+          spkEl.classList.remove("playing");
+          currentSpk = null;
+        };
+      })
+      .catch(function() {
+        // API failed — fall back to espeak sprites
+        if (typeof TTS_AUDIO !== "undefined" && TTS_AUDIO["hak"]) {
+          speakSprites("hak", row, spkEl);
+        } else {
+          spkEl.classList.remove("playing");
+          currentSpk = null;
+        }
       });
   }
 
@@ -97,7 +162,6 @@ var TTS = (function() {
   function stop() {
     if (currentSpk) {
       window.speechSynthesis.cancel();
-      // reset AudioContext to kill in-flight nodes
       if (ctx) { ctx.close(); ctx = null; cache = {}; }
       document.querySelectorAll(".spk.playing").forEach(function(el) { el.classList.remove("playing"); });
       currentSpk = null;
@@ -106,22 +170,32 @@ var TTS = (function() {
 
   function speak(langId, text, row, spkEl) {
     if (currentSpk === spkEl) { stop(); return; }
+
+    // hak → hkilang VITS2 API (with espeak sprite fallback in catch)
+    if (langId === "hak") {
+      speakHakkaAPI(row, spkEl);
+      return;
+    }
+
+    // Other sprite languages (currently none, reserved for future)
     if (BARES.indexOf(langId) !== -1 && typeof TTS_AUDIO !== "undefined" && TTS_AUDIO[langId]) {
       speakSprites(langId, row, spkEl);
-    } else {
-      // For jpn_on/kor/vie, speak actual readings from grid instead of Chinese text
-      var speakText = text;
-      if (NATIVE.indexOf(langId) !== -1) {
-        var cells = row.querySelectorAll(".char-cell:not(.punct)");
-        var parts = [];
-        for (var i = 0; i < cells.length; i++) {
-          var p = (cells[i].dataset.pron || "").replace(/\*$/, "").trim();
-          if (p) parts.push(p);
-        }
-        if (parts.length > 0) speakText = parts.join(" ");
-      }
-      speakNative(langId, speakText, spkEl);
+      return;
     }
+
+    // jpn_on/kor/vie → speak actual readings instead of Chinese text
+    var speakText = text;
+    if (NATIVE.indexOf(langId) !== -1) {
+      var cells = row.querySelectorAll(".char-cell:not(.punct)");
+      var parts = [];
+      for (var i = 0; i < cells.length; i++) {
+        var p = (cells[i].dataset.pron || "").replace(/\*$/, "").trim();
+        if (p) parts.push(p);
+      }
+      if (parts.length > 0) speakText = parts.join(" ");
+    }
+
+    speakNative(langId, speakText, spkEl);
   }
 
   return { speak: speak, stop: stop };
