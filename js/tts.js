@@ -109,7 +109,18 @@ var TTS = (function() {
     if (BARES.indexOf(langId) !== -1 && typeof TTS_AUDIO !== "undefined" && TTS_AUDIO[langId]) {
       speakSprites(langId, row, spkEl);
     } else {
-      speakNative(langId, text, spkEl);
+      // For jpn_on/kor/vie, speak actual readings from grid instead of Chinese text
+      var speakText = text;
+      if (NATIVE.indexOf(langId) !== -1) {
+        var cells = row.querySelectorAll(".char-cell:not(.punct)");
+        var parts = [];
+        for (var i = 0; i < cells.length; i++) {
+          var p = (cells[i].dataset.pron || "").replace(/\*$/, "").trim();
+          if (p) parts.push(p);
+        }
+        if (parts.length > 0) speakText = parts.join(" ");
+      }
+      speakNative(langId, speakText, spkEl);
     }
   }
 
